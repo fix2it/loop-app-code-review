@@ -30,9 +30,13 @@ Run an interactive audit loop over an existing application (not only the current
 
 A score of 9.5/10 means no *new* findings remain in the selected severity levels **and** selected surfaces. It does not mean the application is clean. The backlog may still be long.
 
+## Fast-Path Invocation
+
+If the user explicitly specifies both severity levels and review surfaces in the triggering command (for example `/lacr 1-3 7` or `/lacr levels 1-3 on surfaces 1-4`), normalize both selections, confirm the normalized scope in a single concise sentence, and proceed directly to Step 3 (Workflow) without asking either question. If either axis is missing or ambiguous, ask the missing question(s) sequentially as defined below.
+
 ## Mandatory Severity Selection
 
-Before inspecting the repository, running validation, reading code, asking about surfaces, or spawning a reviewer, ask the user which severity levels to search. This question is mandatory on every invocation, even if the invocation appears to imply a choice. Ask it in the user's language, make it the only substantive response, end the turn, and wait for an explicit answer.
+Before inspecting the repository, running validation, reading code, asking about surfaces, or spawning a reviewer, ask the user which severity levels to search (unless already provided via Fast-Path). This question is mandatory when severity is unspecified. Ask it in the user's language, make it the only substantive response, end the turn, and wait for an explicit answer.
 
 Present all of these options with short plain-language descriptions:
 
@@ -58,7 +62,7 @@ Which levels should this review search? Reply with numbers or names, for example
 
 ## Mandatory Surface Selection
 
-After severity is answered and before inspecting the repository, running validation, or spawning a reviewer, ask where to search. This question is mandatory on every invocation. Ask it in the user's language, make it the only substantive response, end the turn, and wait for an explicit answer.
+After severity is answered and before inspecting the repository, running validation, or spawning a reviewer, ask where to search (unless already provided via Fast-Path). This question is mandatory when surfaces are unspecified. Ask it in the user's language, make it the only substantive response, end the turn, and wait for an explicit answer.
 
 These options are *where to look*, not another severity scale:
 
@@ -156,7 +160,9 @@ Prohibited without exception:
 - Using a reviewer role, preset, agent type, or configuration whose model or fixed reasoning effort differs from the orchestrator's current model and effort.
 - Substituting a stand-in when the orchestrator's model or effort cannot be determined.
 
-If exact model parity or exact effort parity cannot be established, do not launch the reviewer and do not count a pass. Stop and report the loop as incomplete, naming which parity could not be established.
+When running on platforms with native subagent inheritance (such as `model: inherit` in Antigravity/Gemini or standard subagent tool calls where the host platform automatically preserves the orchestrator's model and reasoning settings), runtime parity is satisfied automatically and does not require explicit textual confirmation of internal reasoning-effort parameters.
+
+If exact model parity or exact effort parity cannot be established (and native inheritance is not available), do not launch the reviewer and do not count a pass. Stop and report the loop as incomplete, naming which parity could not be established.
 
 The only permitted deviation is an explicit, unambiguous instruction from the user to run the reviewer on a specific different model. Never infer this from context, environment, or convenience. When it happens, state the deviation in the round table and in the Final Response.
 
@@ -170,6 +176,12 @@ Review the existing application on the selected surfaces, not only the current t
 - Do not treat unrelated dirty files as out of bounds if they sit on a selected surface; do not expand into them if they do not.
 - Preserve the user's worktree. Do not stage, commit, reset, stash, or push.
 - If the user named subsystems in the invocation after the two mandatory questions are answered, intersect those names with the selected surfaces; do not replace the surface contract.
+
+### Coverage Breadth and Non-Exclusion Contract
+
+- **Re-examination is allowed and encouraged:** Reviewers are never forbidden from re-examining previously audited files. In complex subsystems, deeper risks, race conditions, or interactions with newly examined modules may only become evident on a second or deeper look.
+- **Coverage breadth before acceptance:** A score of 9.5/10 (signaling no new in-scope findings remain) is STRICTLY PROHIBITED until all major components, entry points, and paths comprising the selected surfaces have been visited at least once across the rounds.
+- **Audited surface tracking:** Maintain an active list of visited files and subsystems across rounds. In the prompt to subsequent reviewers, pass this list so the reviewer ensures unexamined areas of the selected surface are inspected, while still allowing re-investigation of high-risk components.
 
 ## Review Dimensions
 
@@ -197,47 +209,52 @@ Record at least:
 - plain user impact
 - status `open`
 
+**Persistent Project File Output (`audit-ledger.md`):**
+- By default, maintain and update the full ledger in a project-local markdown file: `audit-ledger.md` in the project root.
+- Do not flood intermediate chat turns with the full ledger text. In intermediate chat updates, output only the compact Score Trajectory Table and a link to `audit-ledger.md`.
+- Ensure `audit-ledger.md` contains the full structured details for all findings, grouped by severity.
+
+**System Failure Aggregation:**
+- Aggregate homogeneous static analysis, compiler, linter, or test failures into a single composite finding (e.g. `F1: Linter/typecheck errors in X files on surface 3`) rather than cluttering the ledger with dozens of individual tool error entries.
+
 **Next reviewer must not search for recorded issues.** Include the full ledger in the reviewer prompt. Instruct: do not report already recorded items; search for *other* defects in the same selected scope; if the same issue is rediscovered, emit `duplicate-of: ID` with no new id.
 
 The orchestrator merges output:
 
-- Accept new in-scope findings into the ledger.
+- Accept new in-scope findings into the ledger and update `audit-ledger.md`.
 - Drop duplicates and near-duplicates (same file + same symptom), including paraphrases. Do not rely on the reviewer to be honest about duplicates.
 - Do not lower the round score because of duplicates or already-recorded items.
 - Continue the loop only because of *new* in-scope findings or a score below 9.5 with a concrete new in-scope issue.
 
-Do not write the ledger into the repository unless the user explicitly asks. Keep it in the conversation and print it in the Final Response.
-
 ## Workflow
 
-1. Complete **Mandatory Severity Selection** and wait.
-2. Complete **Mandatory Surface Selection** and wait.
-3. Confirm both scopes in one or two short sentences, then inspect just enough to map selected surfaces:
+1. Determine scope: use **Fast-Path Invocation** if both severity and surfaces were provided in the command; otherwise complete **Mandatory Severity Selection** and **Mandatory Surface Selection** sequentially.
+2. Confirm both scopes in one concise sentence, then inspect just enough to map selected surfaces:
    - Identify entry points and the primary journey if surfaces 1–2 (or 7) are selected.
    - Identify trust-boundary and failure-path code if surfaces 3–4 (or 7) are selected.
    - For surface 5, list major modules and take one slice each.
    - For surface 6, plan a full walk; still score only selected severity.
    - Run `git status --short` only as context. Do not use it as the review boundary.
-4. Gather validation evidence for selected surfaces (smallest meaningful tests, typecheck, lint, build, or focused scripts). Record commands and results. If something is red and maps to selected severity on a selected surface, add it to the ledger as a finding. Do not fix it. If an out-of-scope failure prevents meaningful review, stop and ask whether to expand; do not fix it.
-5. Start exactly one independent reviewer, never two or more at once:
-   - Apply **Reviewer Runtime Parity** first. If either model or effort cannot be confirmed, stop and report incomplete.
+3. Gather validation evidence for selected surfaces (smallest meaningful tests, typecheck, lint, build, or focused scripts). Record commands and results. If something is red and maps to selected severity on a selected surface, add it to the ledger as an aggregated finding. Do not fix it. If an out-of-scope failure prevents meaningful review, stop and ask whether to expand; do not fix it.
+4. Start exactly one independent reviewer, never two or more at once:
+   - Apply **Reviewer Runtime Parity** first (native inheritance satisfies parity automatically). If either model or effort cannot be confirmed, stop and report incomplete.
    - Start a fresh isolated reviewer conversation on that same model and effort.
-   - Include selected severity, selected surfaces, both contracts, and the **current ledger**.
+   - Include selected severity, selected surfaces, both contracts, the **current ledger**, and the **list of components/paths audited in prior rounds**.
    - Require read-only independent inspection, a comprehension summary of selected surfaces, new findings with file/line references (or `duplicate-of`), and a scoped numeric score from 1 to 10.
-6. Process output:
+5. Process output:
    - Reject every finding outside selected severity or surfaces except the safety override.
-   - Merge new in-scope findings into the ledger. Never apply code fixes.
-   - Never accept 9.5+ while the reviewer lists a *new* unresolved in-scope actionable finding.
+   - Merge new in-scope findings into the ledger and update `audit-ledger.md`. Never apply code fixes.
+   - Never accept 9.5+ while the reviewer lists a *new* unresolved in-scope actionable finding, OR while major components of the selected surfaces remain unvisited (Coverage Breadth Contract).
    - If the reviewer scores below 9.5 with no new in-scope actionable findings, ask once what concrete new in-scope issue prevents 9.5. Accept an explicit no-new-in-scope-findings signal when no issue is supplied.
    - If output remains malformed or demonstrates no credible understanding, use a fresh reviewer.
-7. Report the completed round:
+6. Report the completed round:
    - Add it to the running table using **Score Trajectory Report**.
-   - Show selected severity, selected surfaces, exact reviewer model, new findings this round, and ledger size.
+   - In chat, output only the Score Trajectory Table and a clickable link to `audit-ledger.md`.
    - Refresh the status-line score file at the same moment.
-8. Repeat:
+7. Repeat:
    - Use a fresh reviewer after merging findings, evidence-based rejection, or a malformed review. Never reuse a score after a new actionable finding was reported.
-   - Pass the updated ledger every time.
-   - Accept only when required validation for the selected scope is either green or already in the ledger, no *new* in-scope findings remain, and the latest reviewer either scores at least 9.5/10 or explicitly reports no new in-scope actionable findings.
+   - Pass the updated ledger and visited coverage map every time.
+   - Accept only when required validation for the selected scope is either green or already in the ledger, all key parts of the selected surfaces have been visited at least once, no *new* in-scope findings remain, and the latest reviewer either scores at least 9.5/10 or explicitly reports no new in-scope actionable findings.
    - Use at most five scoring passes unless the user requests another limit or persistence until acceptance.
    - Treat two unchanged passes that only repeat duplicates, already-recorded items, or out-of-scope comments as stagnation.
    - Pass-limit exhaustion or stagnation without acceptance is incomplete, not success.
@@ -276,13 +293,23 @@ Example in Russian; render it in the user's language with the real runtime model
 
 Mirror round scores into a small state file so a live status line can show them. Refresh it whenever the table is printed and clear it when the loop finishes. Failure here must never block or alter review.
 
-- Key the file by repository root, falling back to `$PWD` outside Git:
-  `RF="$HOME/.Codex/statusline-state/loop-app-code-review/$(printf '%s' "$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")" | sed 's#[^A-Za-z0-9]#_#g')"`
-- Write one `<sev>:<score>` segment per round, joined by `;`, latest last. Start the line with `app-code|`.
-- Map severity as: `c` = blocker/critical/serious, `m` = medium, `s` = minor/preference, `n` = no new in-scope findings.
-- Example: `mkdir -p "$(dirname "$RF")" && printf 'app-code|%s\n' "c:8,0;n:9,5" > "$RF"`
-- On Windows PowerShell, create the same directory under `$HOME/.Codex/statusline-state/loop-app-code-review/` and write the same `app-code|...` line.
-- Remove the file in the Final Response after printing the final table.
+- Key the file by repository root, falling back to current working directory outside Git. Directory path: `$HOME/.config/statusline-state/loop-app-code-review/`.
+- Format: one `<sev>:<score>` segment per round, joined by `;`, latest last. Start the line with `app-code|`.
+- Map severity as: `c` = blocker/critical/serious, `m` = medium, `s` = minor/preference, `n` = no new in-scope findings. Example: `app-code|c:8,0;n:9,5`.
+
+**Bash / Unix:**
+```bash
+RF="$HOME/.config/statusline-state/loop-app-code-review/$(printf '%s' "$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")" | sed 's#[^A-Za-z0-9]#_#g')"
+mkdir -p "$(dirname "$RF")" && printf 'app-code|%s' "c:8,0;n:9,5" > "$RF"
+rm -f "$RF"
+```
+
+**Windows PowerShell:**
+```powershell
+$r = (git rev-parse --show-toplevel 2>$null); if (-not $r) { $r = $PWD.Path }; $RF = "$HOME/.config/statusline-state/loop-app-code-review/$($r -replace '[^A-Za-z0-9]', '_')"
+New-Item -ItemType Directory -Force -Path (Split-Path $RF) | Out-Null; Set-Content -Path $RF -Value "app-code|c:8,0;n:9,5" -NoNewline
+Remove-Item -Path $RF -Force -ErrorAction Ignore
+```
 
 ## Reviewer Prompt Template
 
@@ -297,6 +324,10 @@ Selected severity scope (hard acceptance boundary):
 Selected review surfaces (hard search boundary):
 - <selected surfaces and their exact definitions>
 
+Coverage Breadth and Prior Pass Context:
+- Subsystems / paths audited in prior rounds: <list of audited components or "none (first round)">
+- Instructions: You are free and encouraged to re-examine previously audited files if you suspect deeper architectural, concurrency, or subtle logic defects. However, you MUST also inspect unexamined components belonging to the selected surfaces so that no blind spots remain. A score of 9.5 is prohibited if major components of the selected surface remain unvisited.
+
 Search only selected surfaces for selected severity. Do not report unselected lower-severity findings or out-of-surface findings, reduce the score for them, or request fixes. Do not reclassify findings to fit the scope. An unmistakable incidentally discovered blocker, critical security/privacy exposure, or irreversible data-loss risk may be surfaced once as a safety override, without broadening the search.
 
 Known findings ledger (do not rediscover these). Search for OTHER defects in the same selected scope. If you hit the same issue, emit duplicate-of: ID and do not assign a new id:
@@ -304,14 +335,14 @@ Known findings ledger (do not rediscover these). Search for OTHER defects in the
 
 Treat review as an audit handoff. Reconstruct selected journeys/surfaces, important flow, invariants, and failure behavior. Report a finding only when its concrete impact belongs to a selected level on a selected surface.
 
-Return new in-scope findings first in severity order with file/line references and plain user impact. Clearly state when none exist. List any duplicates separately. Then explain the reconstructed flow. End with a scoped score from 1 to 10: 10 when no selected-level defect remains undiscovered on selected surfaces in this pass and validation evidence was inspected; 9.5 when no new selected-level actionable finding remains and only out-of-scope, already-recorded, or subjective items may exist; below 9.5 only when a new selected-level finding remains or required validation is missing. State the concrete new in-scope issue preventing 9.5.
+Return new in-scope findings first in severity order with file/line references and plain user impact. Clearly state when none exist. List any duplicates separately. Then explain the reconstructed flow and which components/files you inspected this round. End with a scoped score from 1 to 10: 10 when no selected-level defect remains undiscovered on selected surfaces in this pass, validation evidence was inspected, and surface coverage is complete; 9.5 when no new selected-level actionable finding remains, surface coverage is complete, and only out-of-scope, already-recorded, or subjective items may exist; below 9.5 when a new selected-level finding remains, coverage is incomplete, or required validation is missing. State the concrete new in-scope issue preventing 9.5.
 ```
 
 ## Final Response
 
 - Print the final trajectory table with selected severity, selected surfaces, and exact reviewer model per round.
 - State which severity levels and surfaces were reviewed and explicitly state that unselected ones were not assessed.
-- Print the full finding ledger in severity order. Do not apply fixes.
+- Provide a clickable link to `audit-ledger.md` in the project directory where the full finding ledger is preserved. In the chat response, provide only a concise executive summary of top findings and total counts. Do not apply fixes.
 - Report the scoped acceptance signal, pass count, and whether the loop passed, stopped incomplete, or was interrupted.
 - Confirm model and reasoning-effort parity for every counted round.
 - Report validation commands and results, safety overrides, duplicates dropped, and remaining risks.
