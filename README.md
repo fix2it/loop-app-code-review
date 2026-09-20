@@ -87,6 +87,31 @@ loop-app-code-review
 - **In Chat:** A clean, compact Score Trajectory table showing round-by-round progress and the link to the ledger.
 - **In Project:** A persistent [`audit-ledger.md`](audit-ledger.md) file containing every verified in-scope finding with file/line references, symptoms, and impact descriptions.
 
+### Example `audit-ledger.md` Structure
+
+```markdown
+# Audit Finding Ledger
+
+- **Scope:** Levels 1–3 (Blockers, Critical, Serious) | Surfaces 1–4 (Practical Audit)
+- **Status:** Complete (Score: 9.5/10, No new in-scope findings remain)
+
+## Findings
+
+### [F1] Critical — Unsanitized IPC File Path
+- **Surface:** 3 (Trust boundaries)
+- **Location:** `src-tauri/src/commands.rs#L42-L48`
+- **Symptom:** User-supplied download path allows directory traversal (`../`).
+- **User Impact:** Potential arbitrary file write risk during model install.
+- **Status:** open
+
+### [F2] Serious — Audio Cancellation Race Condition
+- **Surface:** 4 (Failures, cancel, races)
+- **Location:** `src-tauri/src/managers/audio.rs#L115`
+- **Symptom:** Stopping recording while buffer is flushing triggers thread panic.
+- **User Impact:** Application crashes if recording shortcut is pressed repeatedly.
+- **Status:** open
+```
+
 ---
 
 ## Attribution and License

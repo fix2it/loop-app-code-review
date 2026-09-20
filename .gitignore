@@ -1,2 +1,22 @@
+# OS files
 .DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor & IDE configs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Claude & Agent local settings
 .claude/settings.local.json
+*.local.json
+
+# Temporary & Log files
+*.log
+__pycache__/
+*.pyc
+.git-rewrite/
