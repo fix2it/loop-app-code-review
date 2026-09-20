@@ -30,7 +30,7 @@ loop-app-code-review
 lacr
 ```
 
-The skill asks severity, then surfaces, then starts. It does not edit the repository.
+It first asks how serious a bug must be to count, then which parts of the app to search. After that the review starts. It never changes your project files.
 
 ## Attribution and license
 
